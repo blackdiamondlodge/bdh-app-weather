@@ -1,0 +1,313 @@
+{% extends 'base.html' %}
+
+{% block title %}Weather{% endblock %}
+
+{% block body_class %}mc-page{% endblock %}
+
+{% block navbar_extras %}
+<div class="navbar-extras">
+  <a class="mc-units" data-unit="{{ units }}"
+     href="?units={% if units == 'imperial' %}metric{% else %}imperial{% endif %}"
+     aria-label="Switch between metric and imperial units">
+    <span class="u-metric">°C · km/h</span><span class="u-imperial">°F · mph</span>
+  </a>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  body.mc-page {
+    --accent: #7cc4ff;
+    background: radial-gradient(ellipse 120% 80% at 50% 0%, #1d3350 0%, #0c1622 55%, #060a10 100%) fixed;
+    color: #e8eef5;
+  }
+  /* Same switch as the homepage's °C/°F. */
+  .mc-units { display: inline-flex; padding: 3px; border-radius: 999px; text-decoration: none;
+              background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); }
+  .mc-units span { color: #8fa3bd; font-weight: 600; font-size: 14px; padding: 6px 13px;
+                   border-radius: 999px; white-space: nowrap; }
+  .mc-units[data-unit="metric"] .u-metric,
+  .mc-units[data-unit="imperial"] .u-imperial { background: var(--accent); color: #0c1622; }
+  .mc-stage { position: relative; z-index: 1; max-width: 1500px; margin: 0 auto; padding: 1.5rem 1.25rem 7rem; }
+  .mc-card h2.mc-today { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .mc-season { display: inline-block; padding: .15rem .7rem; border-radius: 999px; font-size: .75rem;
+               letter-spacing: .12em; text-transform: uppercase; background: rgba(255,255,255,.1); color: var(--accent); }
+
+  .mc-grid { display: grid; gap: 1.25rem; grid-template-columns: repeat(12, 1fr); }
+  .mc-card {
+    grid-column: span 12;
+    background: linear-gradient(160deg, rgba(255,255,255,.12), rgba(255,255,255,.035));
+    border: 1px solid rgba(255,255,255,.11);
+    border-radius: 22px;
+    padding: 1.25rem 1.5rem;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 18px 44px rgba(0,0,0,.3);
+  }
+  .mc-card h2 { font-size: .8rem; font-weight: 600; letter-spacing: .2em; text-transform: uppercase; opacity: .6; margin: 0 0 1rem; }
+  .mc-card h2 i { color: var(--accent); margin-right: .45rem; }
+  @media (min-width: 992px) {
+    .span-7 { grid-column: span 7; } .span-5 { grid-column: span 5; }
+    .span-8 { grid-column: span 8; } .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+  }
+
+  /* Today card: subtle animated weather behind the content (transform/opacity only). */
+  .mc-today-card { position: relative; overflow: hidden; isolation: isolate; }
+  .mc-today-card > :not(.mc-wx) { position: relative; z-index: 1; }
+  .mc-wx { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; container-type: size; }
+  .mc-wx > * { position: absolute; will-change: transform, opacity; }
+  .mc-wx .sun { top: -150px; right: -110px; width: 420px; height: 420px; border-radius: 50%;
+                background: radial-gradient(closest-side, rgba(255,214,130,.30), rgba(255,190,90,.10) 55%, transparent);
+                animation: mc-glow 9s ease-in-out infinite alternate; }
+  .mc-wx .rays { top: -340px; right: -300px; width: 800px; height: 800px; border-radius: 50%;
+                 background: repeating-conic-gradient(rgba(255,225,160,.045) 0 4deg, transparent 8deg 16deg);
+                 -webkit-mask: radial-gradient(closest-side, #000 10%, transparent 60%); mask: radial-gradient(closest-side, #000 10%, transparent 60%); filter: blur(1.5px);
+                 animation: mc-spin 180s linear infinite; }
+  .mc-wx .cloud { left: 0; width: 460px; height: 150px; filter: blur(9px);
+                  background:
+                    radial-gradient(closest-side, #fff, transparent) 0 40px / 230px 110px no-repeat,
+                    radial-gradient(closest-side, #fff, transparent) 110px 0 / 250px 150px no-repeat,
+                    radial-gradient(closest-side, #fff, transparent) 250px 35px / 210px 115px no-repeat;
+                  animation: mc-drift linear infinite; }
+  .mc-wx .fog { left: -30%; width: 160%; height: 45%; filter: blur(14px);
+                background: radial-gradient(ellipse at center, rgba(220,230,240,.16), transparent 70%);
+                animation: mc-fog ease-in-out infinite alternate; }
+  .mc-wx .drop { top: 0; width: 1.5px; border-radius: 1px; rotate: 10deg;
+                 background: linear-gradient(transparent, rgba(190,215,255,.45)); animation: mc-fall linear infinite; }
+  .mc-wx .flake { top: 0; border-radius: 50%; background: rgba(255,255,255,.75); animation: mc-snow linear infinite; }
+  .mc-wx .star { border-radius: 50%; background: #fff; animation: mc-twinkle ease-in-out infinite alternate; }
+  .mc-wx .flash { inset: 0; background: rgba(205,220,255,.9); opacity: 0; animation: mc-flash 11s infinite; }
+  @keyframes mc-glow { from { opacity: .75; transform: scale(.96); } to { opacity: 1; transform: scale(1.04); } }
+  @keyframes mc-spin { to { transform: rotate(360deg); } }
+  @keyframes mc-drift { from { transform: translateX(-480px); } to { transform: translateX(calc(100cqw + 20px)); } }
+  @keyframes mc-fog { from { transform: translateX(-8%); } to { transform: translateX(8%); } }
+  @keyframes mc-fall { from { transform: translate(0, -40px); } to { transform: translate(-30px, calc(100cqh + 40px)); } }
+  @keyframes mc-snow { 0% { transform: translate(0, -10px); } 50% { transform: translate(18px, 50cqh); }
+                       100% { transform: translate(-6px, calc(100cqh + 10px)); } }
+  @keyframes mc-twinkle { from { opacity: .12; } to { opacity: .75; } }
+  @keyframes mc-flash { 0%, 86%, 89.5%, 92%, 100% { opacity: 0; } 87% { opacity: .16; } 88% { opacity: .03; } 90.5% { opacity: .11; } }
+  @media (prefers-reduced-motion: reduce) { .mc-wx > * { animation-play-state: paused !important; } .mc-wx .flash { display: none; } }
+
+  .mc-hero-icon { font-size: clamp(4rem, 8vw, 6.5rem); color: var(--accent); filter: drop-shadow(0 8px 24px rgba(0,0,0,.35)); }
+
+  .wa-now { display:flex; align-items:center; gap: 1.75rem; }
+  .wa-now .mc-hero-icon { font-size: 6rem; }
+  .wa-temp { font-size: 6.5rem; font-weight: 200; line-height: 1; letter-spacing: -.04em; }
+  .wa-cond { font-size: 1.6rem; font-weight: 300; }
+  .wa-sub { opacity: .65; margin-top: .35rem; }
+  .wa-place { font-size:.75rem; letter-spacing:.15em; text-transform:uppercase; color: var(--accent); }
+  .wa-tiles { display:grid; grid-template-columns: repeat(2, 1fr); gap: .85rem; }
+  .wa-tile { padding: .8rem 1rem; border-radius: 16px; background: rgba(255,255,255,.06); }
+  .wa-tile .l { font-size:.7rem; letter-spacing:.15em; text-transform:uppercase; opacity:.55; }
+  .wa-tile .l i { color: var(--accent); margin-right:.35rem; }
+  .wa-tile .v { font-size: 1.6rem; font-weight: 600; margin-top:.2rem; }
+  .wa-tile .v small { font-size:.55em; font-weight:400; opacity:.65; margin-left:.2rem; }
+  .wa-tile .s { font-size:.8rem; opacity:.6; }
+  .wa-aqi { display:inline-block; width:.7em; height:.7em; border-radius:50%; margin-right:.4rem; }
+  .wa-aqi.good { background:#5fd68b; } .wa-aqi.moderate { background:#f5d547; } .wa-aqi.usg { background:#ff9a4d; } .wa-aqi.bad { background:#ff5a5a; }
+  .wa-hours-wrap { position:relative; }
+  .wa-hours { display:flex; gap:.6rem; overflow-x:auto; scrollbar-width:none; overscroll-behavior-x:contain;
+               scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch; }
+  .wa-hours::-webkit-scrollbar { display:none; }
+  .wa-hour { scroll-snap-align:start; }
+  .wa-edge { position:absolute; top:0; bottom:0; width:72px; display:flex; align-items:center; pointer-events:none; transition:opacity .4s ease; }
+  .wa-edge.right { right:0; justify-content:flex-end; padding-right:4px; background:linear-gradient(90deg, transparent, #1a2433); }
+  .wa-edge.left { left:0; background:linear-gradient(270deg, transparent, #1a2433); }
+  .wa-edge.hidden { opacity:0; }
+  .wa-edge i { color:rgba(255,255,255,.6); font-size:22px; animation: wa-nudge 1.5s infinite; }
+  @keyframes wa-nudge { 0%, 100% { transform:translateX(0); } 50% { transform:translateX(-8px); } }
+  .wa-hour { flex: 0 0 78px; text-align:center; padding:.75rem .3rem; border-radius:14px; background: rgba(255,255,255,.06); }
+  .wa-hour:first-child { background: rgba(255,255,255,.14); }
+  .wa-hour .n { font-size:.8rem; opacity:.7; } .wa-hour > i { font-size:1.6rem; color: var(--accent); margin:.55rem 0 .4rem; }
+  .wa-hour .t { font-size:1.25rem; font-weight:600; } .wa-hour .p { font-size:.75rem; color:#8fc8ff; margin-top:.2rem; }
+  .wa-hour .p i, .wa-dayrow .dp i { margin-right:.2rem; font-size:.85em; }
+  .dim { opacity:.35; }
+  .wa-dayrow { display:grid; grid-template-columns: 90px 44px 1fr 64px 44px minmax(120px, 2fr) 44px; align-items:center; gap: .9rem;
+                padding:.7rem 0; border-top:1px solid rgba(255,255,255,.07); }
+  .wa-dayrow:first-child { border-top:0; padding-top:0; }
+  .wa-dayrow .dn { font-weight:600; } .wa-dayrow .dn small { display:block; font-weight:400; font-size:.72rem; opacity:.5; }
+  .wa-dayrow .di { font-size:1.6rem; color: var(--accent); text-align:center; }
+  .wa-dayrow .dl { opacity:.75; } .wa-dayrow .dp { font-size:.85rem; color:#8fc8ff; }
+  .wa-dayrow .lo { text-align:right; opacity:.55; font-size:1.15rem; } .wa-dayrow .hi { font-size:1.15rem; font-weight:600; }
+  .wa-dayrow .bar { position:relative; height:6px; border-radius:3px; background: rgba(255,255,255,.08); }
+  .wa-dayrow .bar span { position:absolute; top:0; bottom:0; border-radius:3px; background: linear-gradient(90deg, #7cc4ff, #ffc36b); }
+
+  .mc-empty { opacity: .65; text-align: center; padding: 2rem 0; }
+  .mc-source { text-align: center; font-size: .75rem; opacity: .4; margin-top: 1.5rem; }
+  @media (max-width: 700px) {
+    .wa-now { flex-wrap: wrap; gap: 1rem; }
+    .wa-dayrow { grid-template-columns: 64px 36px 44px 1fr 44px; gap: .6rem; }
+    .wa-dayrow .dl, .wa-dayrow .dp { display: none; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mc-stage">
+  <div class="mc-grid" id="conditions">
+    {% if ok %}
+    <section class="mc-card span-7 mc-today-card">
+      {% if wx %}<div class="mc-wx" data-wx="{{ wx }}" aria-hidden="true"></div>{% endif %}
+      <h2 class="mc-today"><span><i class="fas fa-location-dot"></i>{{ place }}</span>{% if updated %}<span class="mc-season">Updated {{ updated }}</span>{% endif %}</h2>
+      <div class="wa-now">
+        <i class="{{ icon }} mc-hero-icon"></i>
+        <div class="wa-temp">{{ temp }}°</div>
+        <div>
+          <div class="wa-cond">{{ label }}</div>
+          <div class="wa-sub">Feels like {{ feels_like }}°{% if today %} · H {{ today.high }}° L {{ today.low }}°{% endif %}</div>
+          {% if today %}<div class="wa-sub">{{ today.pop }}% chance of precipitation today</div>{% endif %}
+        </div>
+      </div>
+    </section>
+
+    <section class="mc-card span-5">
+      <h2><i class="fas fa-gauge"></i>Details</h2>
+      <div class="wa-tiles">
+        {% if wind.speed is not None %}
+        <div class="wa-tile"><div class="l"><i class="fas fa-wind"></i>Wind</div>
+          <div class="v">{% if wind.rotation is not None %}<i class="fas fa-arrow-up" style="font-size:.7em;color:var(--accent);transform:rotate({{ wind.rotation }}deg)"></i> {% endif %}{{ wind.speed }}<small>{{ u.speed }}</small></div>
+          <div class="s">{% if wind.from %}from {{ wind.from }}{% endif %}{% if wind.gusts is not None %} · gusts {{ wind.gusts }}{% endif %}</div></div>
+        {% endif %}
+        {% if humidity is not None %}
+        <div class="wa-tile"><div class="l"><i class="fas fa-droplet"></i>Humidity</div><div class="v">{{ humidity }}<small>%</small></div></div>
+        {% endif %}
+        {% if aqi %}
+        <div class="wa-tile"><div class="l"><i class="fas fa-leaf"></i>Air quality</div>
+          <div class="v"><span class="wa-aqi {{ aqi.level }}"></span>{{ aqi.value }}</div><div class="s">{{ aqi.label }} (US AQI)</div></div>
+        {% endif %}
+        {% if today.uv is not None %}
+        <div class="wa-tile"><div class="l"><i class="fas fa-sun"></i>UV index</div><div class="v">{{ today.uv }}</div><div class="s">today's max</div></div>
+        {% endif %}
+        {% if sunrise %}
+        <div class="wa-tile"><div class="l"><i class="fas fa-arrow-up"></i>Sunrise</div><div class="v" style="font-size:1.3rem">{{ sunrise }}</div></div>
+        {% endif %}
+        {% if sunset %}
+        <div class="wa-tile"><div class="l"><i class="fas fa-arrow-down"></i>Sunset</div><div class="v" style="font-size:1.3rem">{{ sunset }}</div></div>
+        {% endif %}
+      </div>
+    </section>
+
+    {% if hours %}
+    <section class="mc-card">
+      <h2><i class="fas fa-clock"></i>Next 24 hours</h2>
+      <div class="wa-hours-wrap">
+        <div class="wa-hours" id="wa-hours">
+          {% for h in hours %}
+          <div class="wa-hour"><div class="n">{{ h.name }}</div><i class="{{ h.icon }}"></i><div class="t">{{ h.temp }}°</div>
+            <div class="p{% if h.pop < 20 %} dim{% endif %}"><i class="fas fa-droplet"></i>{{ h.pop }}%</div></div>
+          {% endfor %}
+        </div>
+        <div class="wa-edge left hidden" id="wa-edge-l"></div>
+        <div class="wa-edge right" id="wa-edge-r"><i class="fas fa-chevron-right"></i></div>
+      </div>
+    </section>
+    {% endif %}
+
+    {% if days %}
+    <section class="mc-card">
+      <h2><i class="fas fa-calendar-days"></i>7-day forecast</h2>
+      {% for d in days %}
+      <div class="wa-dayrow">
+        <div class="dn">{{ d.name }}<small>{{ d.date }}</small></div>
+        <i class="{{ d.icon }} di"></i>
+        <div class="dl">{{ d.label }}</div>
+        <div class="dp{% if d.pop < 20 %} dim{% endif %}"><i class="fas fa-droplet"></i>{{ d.pop }}%</div>
+        <div class="lo">{{ d.low }}°</div>
+        <div class="bar">{% if d.width %}<span style="left:{{ d.left }}%;width:{{ d.width }}%"></span>{% endif %}</div>
+        <div class="hi">{{ d.high }}°</div>
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+    {% else %}
+    <section class="mc-card"><p class="mc-empty">The forecast is unavailable right now. We'll keep trying.</p></section>
+    {% endif %}
+  </div>
+
+  <p class="mc-source">Forecast and air quality by Open-Meteo</p>
+</div>
+
+<script>
+  (function () {
+    // Today-card weather: a few layers per effect, randomised so it never looks tiled.
+    var LAYERS = {
+      sun: ['rays', 'sun'], stars: ['stars'], partly: ['rays', 'sun', 'clouds:2'], clouds: ['clouds:4'],
+      fog: ['fog'], drizzle: ['clouds:2', 'drizzle'], rain: ['clouds:3', 'rain'], snow: ['clouds:2', 'snow'],
+      storm: ['clouds:4', 'rain', 'flash']
+    };
+    function rnd(a, b) { return a + Math.random() * (b - a); }
+    function add(layer, cls, style) {
+      var el = document.createElement('i');
+      el.className = cls;
+      Object.assign(el.style, style || {});
+      layer.appendChild(el);
+    }
+    function particles(layer, n, cls, size, dur) {
+      for (var i = 0; i < n; i++) {
+        var d = rnd(dur[0], dur[1]), s = rnd(size[0], size[1]);
+        add(layer, cls, cls === 'drop'
+          ? { left: rnd(0, 104) + '%', height: s + 'px', opacity: rnd(.4, 1), animationDuration: d + 's', animationDelay: -rnd(0, d) + 's' }
+          : { left: rnd(0, 100) + '%', width: s + 'px', height: s + 'px', opacity: rnd(.35, .9), animationDuration: d + 's', animationDelay: -rnd(0, d) + 's' });
+      }
+    }
+    function buildWx(layer) {
+      (LAYERS[layer.dataset.wx] || []).forEach(function (spec) {
+        var kind = spec.split(':')[0], n = +spec.split(':')[1] || 0, i, d;
+        if (kind === 'clouds') {
+          for (i = 0; i < n; i++) {
+            d = rnd(100, 170);
+            add(layer, 'cloud', { top: rnd(-25, 65) + '%', scale: rnd(.7, 1.3), opacity: rnd(.11, .19),
+                                  animationDuration: d + 's', animationDelay: -(d * (i + rnd(.1, .9)) / n) + 's' });
+          }
+        } else if (kind === 'fog') {
+          [12, 40, 66].forEach(function (top, j) {
+            add(layer, 'fog', { top: top + '%', animationDuration: rnd(28, 45) + 's', animationDelay: -j * 9 + 's' });
+          });
+        } else if (kind === 'stars') {
+          for (i = 0; i < 40; i++) {
+            d = rnd(1.5, 2.6);
+            add(layer, 'star', { left: rnd(0, 100) + '%', top: rnd(0, 100) + '%', width: d + 'px', height: d + 'px',
+                                 animationDuration: rnd(2, 6) + 's', animationDelay: -rnd(0, 6) + 's' });
+          }
+        } else if (kind === 'rain') { particles(layer, 60, 'drop', [14, 24], [.55, .85]);
+        } else if (kind === 'drizzle') { particles(layer, 30, 'drop', [7, 11], [1.1, 1.7]);
+        } else if (kind === 'snow') { particles(layer, 45, 'flake', [2.5, 5.5], [8, 15]);
+        } else { add(layer, kind); }
+      });
+    }
+    document.querySelectorAll('.mc-wx').forEach(buildWx);
+
+    // 24-hour strip: fade the edges that have more hours beyond them.
+    function bindHours() {
+      var s = document.getElementById('wa-hours');
+      if (!s) return;
+      var l = document.getElementById('wa-edge-l'), r = document.getElementById('wa-edge-r');
+      function upd() {
+        l.classList.toggle('hidden', s.scrollLeft < 8);
+        r.classList.toggle('hidden', s.scrollLeft + s.clientWidth >= s.scrollWidth - 8);
+      }
+      if (!s.dataset.bound) { s.dataset.bound = '1'; s.addEventListener('scroll', upd, { passive: true }); }
+      upd();
+    }
+    window.addEventListener('resize', bindHours);
+    bindHours();
+
+    // Kiosk screens stay open for days: refresh the cards every 5 minutes.
+    setInterval(async function () {
+      try {
+        var html = await (await fetch(window.location.href)).text();
+        var fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('conditions');
+        if (!fresh) return;
+        var conditions = document.getElementById('conditions');
+        var oldWx = conditions.querySelector('.mc-wx');
+        conditions.innerHTML = fresh.innerHTML;
+        var newWx = conditions.querySelector('.mc-wx');
+        if (newWx && oldWx && oldWx.dataset.wx === newWx.dataset.wx) newWx.replaceWith(oldWx);  // no jump
+        else if (newWx) buildWx(newWx);
+        bindHours();
+      } catch (e) { /* keep showing the last good data */ }
+    }, 5 * 60 * 1000);
+  })();
+</script>
+{% endblock %}
