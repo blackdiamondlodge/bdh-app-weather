@@ -14,8 +14,10 @@ Set them on the hub's Settings page, in the site's `[apps.weather]` table, or as
 | Key | Default | |
 |---|---|---|
 | `place` | site brand subtitle | Name shown on the Now card |
-| `units` | `metric` | `metric` or `imperial`; the page's toggle overrides it per visit |
 | `latitude`, `longitude` | site `[location]` | Forecast location |
+
+Temperatures and wind follow the hub's units (its °C/°F switch). The page's own toggle only
+changes what that visit shows.
 
 Preview a background with `?wx=` (`sun`, `stars`, `partly`, `clouds`, `fog`, `drizzle`, `rain`,
 `snow`, `storm`).

@@ -136,7 +136,7 @@ class ViewTests(TestCase):
         self.assertIn('data-wx="snow"', html)
         self.assertIn('data-wx="clouds"', self.client.get("/weather/?wx=<b>").content.decode())
 
-    @patch.dict("os.environ", {"BDH_WEATHER_UNITS": "imperial"})
+    @patch.dict("os.environ", {"BDH_HUB_UNITS": "imperial"})
     @patch("weather.views.get_weather", side_effect=lambda: payload())
     def test_default_units_setting(self, *_):
         self.assertIn('data-unit="imperial"', self.client.get("/weather/").content.decode())
@@ -156,7 +156,7 @@ class HomepageHookTests(TestCase):
 
     def test_status(self):
         self.assertEqual(self.status(payload()).text, "7° · Overcast")
-        self.assertEqual(self.status(payload(), {"BDH_WEATHER_UNITS": "imperial"}).text, "45° · Overcast")
+        self.assertEqual(self.status(payload(), {"BDH_HUB_UNITS": "imperial"}).text, "45° · Overcast")
 
     def test_unavailable(self):
         self.assertIsNone(self.status(None))

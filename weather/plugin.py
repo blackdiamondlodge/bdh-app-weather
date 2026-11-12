@@ -1,5 +1,4 @@
 from bdh_sdk import PluginSpec, Setting, Tile
-from bdh_sdk.plugins import CHOICE
 from bdh_sdk.provides import STATS
 
 STAT_KEYS = (
@@ -30,8 +29,6 @@ spec = PluginSpec(
     settings=(
         Setting("place", "Place name", default="",
                 help="Shown on the Now card. Defaults to the site's subtitle."),
-        Setting("units", "Default units", type=CHOICE, default="metric",
-                choices=(("metric", "Metric (°C, km/h)"), ("imperial", "Imperial (°F, mph)"))),
         Setting("latitude", "Latitude", default="",
                 help="Leave blank to use the site's location."),
         Setting("longitude", "Longitude", default="",
