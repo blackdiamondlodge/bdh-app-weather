@@ -31,10 +31,15 @@ def build_stats(data, units, now=None):
             out.append(Stat(key, LABELS[key], value=f"{value}{u.temp}", order=order))
     tz = timezone(timedelta(seconds=forecast.get("utc_offset_seconds", 0)))
     now = now or utc_now()
+    sun = []
     for order, key in ((30, "sunrise"), (40, "sunset")):
         t = _next(daily.get(key), tz, now)
         if t is not None:
             out.append(Stat(key, LABELS[key], time=t, order=order))
+            sun.append((t, LABELS[key]))
+    if sun:
+        t, label = min(sun)
+        out.append(Stat("sun", label, time=t, order=35))
     return out
 
 

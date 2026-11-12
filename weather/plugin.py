@@ -7,6 +7,7 @@ STAT_KEYS = (
     ("feels_like", "Feels like"),
     ("sunrise", "Sunrise"),
     ("sunset", "Sunset"),
+    ("sun", "Next sunrise or sunset"),
 )
 
 spec = PluginSpec(
