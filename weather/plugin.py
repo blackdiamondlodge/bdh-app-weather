@@ -1,11 +1,21 @@
 from bdh_sdk import PluginSpec, Setting, Tile
 from bdh_sdk.plugins import CHOICE
+from bdh_sdk.provides import STATS
+
+STAT_KEYS = (
+    ("temp", "Temperature"),
+    ("feels_like", "Feels like"),
+    ("sunrise", "Sunrise"),
+    ("sunset", "Sunset"),
+)
 
 spec = PluginSpec(
     id="weather",
     app="weather",
     urls="weather.urls",
     status="weather.homepage.status",
+    provides={STATS: "weather.provides.stats"},
+    stat_keys=STAT_KEYS,
     tiles=(
         Tile(
             title="Weather",
