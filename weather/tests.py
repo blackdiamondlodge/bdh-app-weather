@@ -162,6 +162,36 @@ class HomepageHookTests(TestCase):
         self.assertIsNone(self.status(None))
 
 
+class ProvidesTests(TestCase):
+    def test_stats(self):
+        from weather.plugin import STAT_KEYS
+        from weather.provides import build_stats
+        stats = {s.key: s for s in build_stats(payload(), "metric", NOW)}
+        self.assertEqual(set(stats), {k for k, _ in STAT_KEYS})
+        self.assertEqual((stats["temp"].value, stats["feels_like"].value), ("7°C", "5°C"))
+        local = timezone(timedelta(seconds=OFFSET))
+        # Today's sunrise has passed, so the next one is tomorrow's; sunset is still today.
+        self.assertEqual(stats["sunrise"].time, datetime(2026, 1, 11, 7, 55, tzinfo=local))
+        self.assertEqual(stats["sunset"].time, datetime(2026, 1, 10, 16, 40, tzinfo=local))
+
+    def test_imperial(self):
+        from weather.provides import build_stats
+        stats = {s.key: s for s in build_stats(payload(), "imperial", NOW)}
+        self.assertEqual(stats["temp"].value, "45°F")
+
+    def test_unavailable(self):
+        from weather.provides import build_stats
+        self.assertEqual(build_stats(None, "metric", NOW), [])
+
+    def test_spec_declares_provider(self):
+        from bdh_sdk.provides import STATS
+        from weather.plugin import spec
+        self.assertEqual(spec.provides, {STATS: "weather.provides.stats"})
+        with patch("weather.provides.get_weather", return_value=payload()):
+            from weather.provides import stats
+            self.assertTrue(stats())
+
+
 @tag("selenium")
 class HourlySwipeTest(StaticLiveServerTestCase):
     @classmethod
