@@ -173,6 +173,14 @@ class ProvidesTests(TestCase):
         # Today's sunrise has passed, so the next one is tomorrow's; sunset is still today.
         self.assertEqual(stats["sunrise"].time, datetime(2026, 1, 11, 7, 55, tzinfo=local))
         self.assertEqual(stats["sunset"].time, datetime(2026, 1, 10, 16, 40, tzinfo=local))
+        self.assertEqual((stats["sun"].label, stats["sun"].time), ("Sunset", stats["sunset"].time))
+
+    def test_next_sun_after_sunset_is_sunrise(self):
+        from weather.provides import build_stats
+        local = timezone(timedelta(seconds=OFFSET))
+        evening = datetime(2026, 1, 10, 20, tzinfo=local)
+        sun = {s.key: s for s in build_stats(payload(), "metric", evening)}["sun"]
+        self.assertEqual((sun.label, sun.time), ("Sunrise", datetime(2026, 1, 11, 7, 55, tzinfo=local)))
 
     def test_imperial(self):
         from weather.provides import build_stats
