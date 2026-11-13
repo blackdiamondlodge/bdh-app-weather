@@ -9,6 +9,7 @@ from .forecast import EFFECTS, describe, get_weather, place_name, weather_effect
 
 COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 AQI_LEVELS = ((50, "good", "Good"), (100, "moderate", "Moderate"), (150, "usg", "Unhealthy for sensitive groups"))
+SNOW_STRIP_CM = 2  # forecast snow over the next 24 hours that switches the strip to snow amounts
 
 
 def utc_now():
@@ -149,6 +150,22 @@ def _alert_strip(alert, hours, hourly, offset, now, u):
     return f"Total {_num(total)} {unit} by {window[-1]['until']}"
 
 
+def _forecast_snow(hours, hourly, offset):
+    """A stand-in snow "alert" spanning the snowy hours when the next 24 hours bring real snow, so
+    places that care about snowfall (ski hills) see amounts without waiting for a warning."""
+    snowfall = hourly.get("snowfall")
+    if not hours or not snowfall:
+        return None
+    snowy = [h["i"] for h in hours if (snowfall[h["i"]] or 0) > 0]
+    if sum(snowfall[i] for i in snowy) < SNOW_STRIP_CM:
+        return None
+
+    def utc(i):
+        return (datetime.fromisoformat(hourly["time"][i]) - offset).replace(tzinfo=timezone.utc)
+
+    return {"kind": "snow", "start": utc(snowy[0]), "end": utc(snowy[-1]) + timedelta(hours=1)}
+
+
 def build_context(data, units, now=None, alerts=()):
     u = Units(units)
     context = {"units": u.system, "u": u, "place": place_name(), "ok": False}
@@ -211,6 +228,11 @@ def build_context(data, units, now=None, alerts=()):
         if chip:
             strip = {"kind": lead["kind"], "severity": lead["severity"], "chip": chip,
                      "unit": {"wind": u.speed, "snow": u.snow_unit, "rain": u.rain_unit}[lead["kind"]]}
+    if not strip:
+        snowfall = _forecast_snow(hours, hourly, offset)
+        chip = snowfall and _alert_strip(snowfall, hours, hourly, offset, now, u)
+        if chip:
+            strip = {"kind": "snow", "severity": "forecast", "chip": chip, "unit": u.snow_unit}
 
     direction = c.get("wind_direction_10m")
     today = days[0] if days and days[0]["name"] == "Today" else None
