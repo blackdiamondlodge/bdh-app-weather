@@ -28,10 +28,6 @@ spec = PluginSpec(
     ),
     settings=(
         Setting("place", "Place name", default="",
-                help="Shown on the Now card. Defaults to the site's subtitle."),
-        Setting("latitude", "Latitude", default="",
-                help="Leave blank to use the site's location."),
-        Setting("longitude", "Longitude", default="",
-                help="Leave blank to use the site's location."),
+                help="Shown on the Now card. Defaults to the city in Settings > Location."),
     ),
 )

@@ -5,6 +5,7 @@ import requests
 from django.conf import settings
 from django.core.cache import cache
 
+from bdh_sdk.location import location as hub_location
 from bdh_sdk.settings import app_setting
 
 log = logging.getLogger(__name__)
@@ -81,28 +82,20 @@ def describe(code, is_day=True):
     return (icon if is_day else NIGHT_ICONS.get(icon, icon)), label
 
 
-def _float(value):
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def location():
-    """(latitude, longitude) from the app's settings, else the site's [location], else None."""
-    site = getattr(settings, "HUB_LOCATION", None) or {}
-    lat, lon = _float(app_setting("weather", "latitude", "")), _float(app_setting("weather", "longitude", ""))
-    if lat is None or lon is None:
-        lat, lon = _float(site.get("latitude")), _float(site.get("longitude"))
-    if lat is None or lon is None:
+    """(latitude, longitude) of the hub's location (Settings > Location), or None."""
+    where = hub_location()
+    if not where or not where.has_coordinates:
         return None
-    return round(lat, 3), round(lon, 3)
+    return round(where.latitude, 3), round(where.longitude, 3)
 
 
 def place_name():
-    """Heading for the Now card: the place setting, else the site's brand subtitle or name."""
+    """Heading for the Now card: the place setting, else the hub's city, else the brand subtitle or name."""
+    where = hub_location()
     brand = getattr(settings, "HUB_BRAND", None) or {}
-    return app_setting("weather", "place", "") or brand.get("subtitle") or brand.get("name") or "Weather"
+    return (app_setting("weather", "place", "") or (where.name if where else "")
+            or brand.get("subtitle") or brand.get("name") or "Weather")
 
 
 def _air_quality(lat, lon):
