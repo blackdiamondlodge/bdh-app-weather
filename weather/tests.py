@@ -10,6 +10,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
 from weather.forecast import location, place_name
+from weather import alerts as wa
 from weather.views import build_context
 
 # 2026-01-10 15:20 local in a UTC-8 place.
@@ -120,6 +121,7 @@ class LocationTests(TestCase):
             self.assertIsNone(location())
 
 
+@patch("weather.views.get_alerts", return_value=[])
 @patch("weather.views.utc_now", return_value=NOW)
 class ViewTests(TestCase):
     def setUp(self):
@@ -157,8 +159,10 @@ class ViewTests(TestCase):
 
 
 class HomepageHookTests(TestCase):
-    def status(self, data, env=None):
-        with patch("weather.homepage.get_weather", return_value=data), patch.dict("os.environ", env or {}):
+    def status(self, data, env=None, alerts=None):
+        with patch("weather.homepage.get_weather", return_value=data), patch.dict("os.environ", env or {}), \
+                patch("weather.homepage.get_alerts", return_value=alerts or []), \
+                patch("weather.homepage.utc_now", return_value=NOW):
             from weather.homepage import status
             return status()
 
@@ -168,6 +172,11 @@ class HomepageHookTests(TestCase):
 
     def test_unavailable(self):
         self.assertIsNone(self.status(None))
+
+    def test_alert_warns(self):
+        from bdh_sdk import WARN
+        s = self.status(payload(), alerts=[alert("Wind warning")])
+        self.assertEqual((s.text, s.level), ("⚠ Wind warning · 7° Overcast", WARN))
 
 
 class ProvidesTests(TestCase):
@@ -206,6 +215,134 @@ class ProvidesTests(TestCase):
         with patch("weather.provides.get_weather", return_value=payload()):
             from weather.provides import stats
             self.assertTrue(stats())
+
+
+def alert(title, severity="orange", start=None, end=NOW + timedelta(hours=3), text="What:\nStrong winds.\n"):
+    return wa._alert(key=title, title=title, severity=severity, text=text, source="Environment Canada",
+                     issued=NOW - timedelta(hours=1), start=start, end=end)
+
+
+def alert_payload():
+    data = payload()
+    data["forecast"]["hourly"].update({
+        "wind_speed_10m": [20.0 + i for i in range(72)],
+        "wind_gusts_10m": [40.0 + i for i in range(72)],
+        "wind_direction_10m": [270] * 72,
+        "snowfall": [0.5] * 72,
+        "precipitation": [1.0] * 72,
+    })
+    return data
+
+
+class AlertParseTests(TestCase):
+    def test_kind(self):
+        self.assertEqual([wa.kind(n) for n in ("Wind warning", "Blizzard warning", "Winter storm warning",
+                                               "Snowfall warning", "Rainfall warning", "Extreme cold warning",
+                                               "Wind chill advisory", "Fog advisory")],
+                         ["wind", "wind", "snow", "snow", "rain", None, None, None])
+
+    def test_sections(self):
+        self.assertEqual(wa.sections("* WHAT...Southwest winds 40 mph.\n\n* WHERE...The mountains.\n"),
+                         [("What", "Southwest winds 40 mph."), ("Where", "The mountains.")])
+        self.assertEqual(wa.sections("What:\nFog.\n\nWhen:\nTonight.\n"), [("What", "Fog."), ("When", "Tonight.")])
+        self.assertEqual(wa.sections("Just  some\ntext"), [("", "Just some text")])
+
+    def test_eccc(self):
+        def feature(code, name, colour, status="active", end="2026-01-11T12:00:00Z"):
+            return {"properties": {"alert_code": code, "alert_name_en": name, "risk_colour_en": colour,
+                                   "status_en": status, "event_end_datetime": end,
+                                   "alert_text_en": "What:\nWinds gusting to 90 km/h.\n\nWhen:\nTonight.\n",
+                                   "publication_datetime": "2026-01-10T20:00:00Z"}}
+        found = wa.parse_eccc({"features": [
+            feature("WW", "wind warning", "yellow"),
+            feature("WW", "wind warning", "orange"),  # same alert, another region
+            feature("SPS", "special weather statement", None),
+            feature("FG", "fog advisory", "yellow", status="ended"),
+            feature("RW", "rainfall warning", "red", end="2026-01-10T20:00:00Z"),  # over
+        ]}, NOW)
+        by_key = {a["key"]: a for a in found}
+        self.assertEqual(set(by_key), {"WW", "SPS"})
+        wind = by_key["WW"]
+        self.assertEqual((wind["title"], wind["severity"], wind["kind"], wind["summary"]),
+                         ("Wind warning", "orange", "wind", "Winds gusting to 90 km/h."))
+        self.assertEqual(wind["sections"], [("When", "Tonight.")])
+        self.assertEqual(by_key["SPS"]["severity"], "yellow")  # statements are never grey
+
+    def test_nws(self):
+        def feature(event, severity, ends="2026-01-11T12:00:00Z", **extra):
+            props = {"event": event, "severity": severity, "status": "Actual", "messageType": "Alert",
+                     "ends": ends, "description": "* WHAT...Dense fog.", "senderName": "NWS Seattle WA"}
+            props.update(extra)
+            return {"properties": props}
+        found = wa.parse_nws({"features": [
+            feature("High Wind Warning", "Severe"),
+            feature("Dense Fog Advisory", "Moderate"),
+            feature("Blizzard Warning", "Extreme", ends="2026-01-10T00:00:00Z"),
+            feature("Winter Storm Watch", "Severe", messageType="Cancel"),
+        ]}, NOW)
+        self.assertEqual([(a["title"], a["severity"], a["source"]) for a in found],
+                         [("High Wind Warning", "orange", "NWS Seattle WA"),
+                          ("Dense Fog Advisory", "yellow", "NWS Seattle WA")])
+
+    @patch("weather.alerts.requests.get", side_effect=OSError("down"))
+    def test_get_alerts_survives_errors(self, _):
+        cache.clear()
+        with patch("weather.alerts.hub_location",
+                   return_value=Location(name="Sun Peaks", latitude=50.88, longitude=-119.9, country="Canada")):
+            self.assertEqual(wa.get_alerts(NOW), [])
+
+    def test_get_alerts_without_location(self):
+        with patch("weather.alerts.hub_location", return_value=None):
+            self.assertEqual(wa.get_alerts(NOW), [])
+
+
+class AlertStripTests(TestCase):
+    def test_wind(self):
+        ctx = build_context(alert_payload(), "metric", NOW, alerts=[alert("Wind warning")])
+        self.assertEqual(ctx["strip"], {"kind": "wind", "severity": "orange", "chip": "Peak 38 km/h · gusts 58",
+                                        "unit": "km/h"})
+        hours = ctx["hours"]
+        self.assertEqual([h["inwin"] for h in hours[:5]], [True, True, True, True, False])
+        self.assertEqual((hours[0]["value"], hours[0]["gust"], hours[0]["wind_from"], hours[0]["rotation"]),
+                         (35, 55, "W", 90))
+        self.assertEqual(ctx["alerts"][0]["when"], "until 6:20 PM")
+
+    def test_snow_total(self):
+        strip = build_context(alert_payload(), "metric", NOW, alerts=[alert("Snowfall warning")])["strip"]
+        self.assertEqual(strip["chip"], "Total 2 cm by 7 PM")
+
+    def test_rain_imperial(self):
+        ctx = build_context(alert_payload(), "imperial", NOW, alerts=[alert("Rainfall warning", "yellow")])
+        self.assertEqual((ctx["strip"]["chip"], ctx["strip"]["unit"]), ("Total 0.16 in by 7 PM", "in"))
+        self.assertEqual(ctx["hours"][0]["value"], "0.04")
+
+    def test_alert_after_the_strip_keeps_rain_chance(self):
+        later = alert("Wind warning", start=NOW + timedelta(hours=30), end=NOW + timedelta(hours=40))
+        ctx = build_context(alert_payload(), "metric", NOW, alerts=[later])
+        self.assertIsNone(ctx["strip"])
+        self.assertEqual(ctx["alerts"][0]["when"], "from Sun 9:20 PM until Mon 7:20 AM")
+
+    def test_old_cache_without_fields_keeps_rain_chance(self):
+        ctx = build_context(payload(), "metric", NOW, alerts=[alert("Wind warning")])
+        self.assertIsNone(ctx["strip"])
+        self.assertEqual(len(ctx["alerts"]), 1)
+
+    def test_fog_shows_banner_only(self):
+        ctx = build_context(alert_payload(), "metric", NOW, alerts=[alert("Fog advisory", "yellow")])
+        self.assertIsNone(ctx["strip"])
+        self.assertEqual((ctx["alerts"][0]["icon"], ctx["alert_sources"]), ("fas fa-smog", ["Environment Canada"]))
+
+    @patch("weather.views.utc_now", return_value=NOW)
+    @patch("weather.views.get_weather", side_effect=lambda: alert_payload())
+    def test_page_shows_banner_and_strip(self, *_):
+        with patch("weather.views.get_alerts", return_value=[alert("Wind warning")]):
+            html = self.client.get("/weather/").content.decode()
+        self.assertIn('class="wa-alert orange"', html)
+        self.assertIn("Wind warning", html)
+        self.assertIn("Peak 38 km/h · gusts 58", html)
+        self.assertIn("wa-hour inwin", html)
+        self.assertIn("alerts by Environment Canada", html)
+        self.assertNotIn("fa-droplet", html.split('id="wa-hours"')[1].split("</section>")[0])
 
 
 @tag("selenium")

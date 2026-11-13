@@ -15,7 +15,8 @@ AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 CACHE_TTL = 15 * 60
 CURRENT = ("temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,"
            "wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation")
-HOURLY = "temperature_2m,weather_code,precipitation_probability,is_day"
+HOURLY = ("temperature_2m,weather_code,precipitation_probability,is_day,"
+          "wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation,snowfall")
 DAILY = ("weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,"
          "precipitation_sum,uv_index_max,sunrise,sunset")
 
