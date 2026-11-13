@@ -222,13 +222,13 @@ def alert(title, severity="orange", start=None, end=NOW + timedelta(hours=3), te
                      issued=NOW - timedelta(hours=1), start=start, end=end)
 
 
-def alert_payload():
+def alert_payload(snow=None):
     data = payload()
     data["forecast"]["hourly"].update({
         "wind_speed_10m": [20.0 + i for i in range(72)],
         "wind_gusts_10m": [40.0 + i for i in range(72)],
         "wind_direction_10m": [270] * 72,
-        "snowfall": [0.5] * 72,
+        "snowfall": snow or [0.5] * 72,
         "precipitation": [1.0] * 72,
     })
     return data
@@ -318,9 +318,22 @@ class AlertStripTests(TestCase):
 
     def test_alert_after_the_strip_keeps_rain_chance(self):
         later = alert("Wind warning", start=NOW + timedelta(hours=30), end=NOW + timedelta(hours=40))
-        ctx = build_context(alert_payload(), "metric", NOW, alerts=[later])
+        ctx = build_context(alert_payload([0] * 72), "metric", NOW, alerts=[later])
         self.assertIsNone(ctx["strip"])
         self.assertEqual(ctx["alerts"][0]["when"], "from Sun 9:20 PM until Mon 7:20 AM")
+
+    def test_forecast_snow_without_alert(self):
+        snow = [0] * 72
+        snow[17:21] = [1.0] * 4  # 5 PM to 9 PM, the strip starts at 3 PM
+        ctx = build_context(alert_payload(snow), "metric", NOW)
+        self.assertEqual(ctx["strip"], {"kind": "snow", "severity": "forecast", "chip": "Total 4 cm by 9 PM",
+                                        "unit": "cm"})
+        self.assertEqual([h["inwin"] for h in ctx["hours"][:7]], [False, False, True, True, True, True, False])
+
+    def test_light_forecast_snow_keeps_rain_chance(self):
+        snow = [0] * 72
+        snow[17:20] = [0.5] * 3
+        self.assertIsNone(build_context(alert_payload(snow), "metric", NOW)["strip"])
 
     def test_old_cache_without_fields_keeps_rain_chance(self):
         ctx = build_context(payload(), "metric", NOW, alerts=[alert("Wind warning")])
@@ -328,7 +341,7 @@ class AlertStripTests(TestCase):
         self.assertEqual(len(ctx["alerts"]), 1)
 
     def test_fog_shows_banner_only(self):
-        ctx = build_context(alert_payload(), "metric", NOW, alerts=[alert("Fog advisory", "yellow")])
+        ctx = build_context(alert_payload([0] * 72), "metric", NOW, alerts=[alert("Fog advisory", "yellow")])
         self.assertIsNone(ctx["strip"])
         self.assertEqual((ctx["alerts"][0]["icon"], ctx["alert_sources"]), ("fas fa-smog", ["Environment Canada"]))
 

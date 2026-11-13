@@ -11,7 +11,8 @@ coloured by severity, from [Environment Canada](https://weather.gc.ca/) in Canad
 [National Weather Service](https://www.weather.gov/) in the US (both keyless, cached for 5 minutes).
 While a wind, snowfall or rainfall alert is on, the 24-hour strip shows that number instead of the
 chance of rain (wind speed, direction and gusts; snow or rain per hour with a running total), and
-the home tile turns amber with the alert's name.
+the home tile turns amber with the alert's name. With no alert, the strip still switches to snow amounts
+when 2 cm or more is forecast over the next 24 hours.
 
 ## Settings
 
