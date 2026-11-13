@@ -13,8 +13,7 @@ Set them on the hub's Settings page, in the site's `[apps.weather]` table, or as
 
 | Key | Default | |
 |---|---|---|
-| `place` | site brand subtitle | Name shown on the Now card |
-| `latitude`, `longitude` | site `[location]` | Forecast location |
+| `place` | city from Settings > Location, else site brand subtitle | Name shown on the Now card |
 
 Temperatures and wind follow the hub's units (its °C/°F switch). The page's own toggle only
 changes what that visit shows.

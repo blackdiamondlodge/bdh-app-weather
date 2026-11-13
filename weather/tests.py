@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.core.cache import cache
+from bdh_sdk.location import Location
 from django.test import TestCase, override_settings, tag
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -95,21 +96,28 @@ class BuildContextTests(TestCase):
 
 
 class LocationTests(TestCase):
-    @override_settings(HUB_LOCATION={"latitude": 47.5712345, "longitude": -122.2221}, HUB_BRAND={"subtitle": "Mercer Island"})
-    def test_site_defaults(self):
-        self.assertEqual(location(), (47.571, -122.222))
-        self.assertEqual(place_name(), "Mercer Island")
+    def at(self, where):
+        return patch("weather.forecast.hub_location", return_value=where)
 
-    @override_settings(HUB_LOCATION={"latitude": 47.57, "longitude": -122.22})
-    def test_app_settings_win(self):
-        with patch.dict("os.environ", {"BDH_WEATHER_LATITUDE": "50.88", "BDH_WEATHER_LONGITUDE": "-119.89",
-                                       "BDH_WEATHER_PLACE": "Sun Peaks"}):
-            self.assertEqual(location(), (50.88, -119.89))
+    @override_settings(HUB_BRAND={"subtitle": "Lodge"})
+    def test_hub_location(self):
+        with self.at(Location(name="Sun Peaks", latitude=50.8812345, longitude=-119.9071, timezone="America/Vancouver")):
+            self.assertEqual(location(), (50.881, -119.907))
             self.assertEqual(place_name(), "Sun Peaks")
 
-    @override_settings(HUB_LOCATION={})
+    @override_settings(HUB_BRAND={"subtitle": "Mercer Island"})
+    def test_place_setting_wins(self):
+        with self.at(Location(name="Seattle", latitude=47.6, longitude=-122.3)), \
+                patch.dict("os.environ", {"BDH_WEATHER_PLACE": "The Lodge"}):
+            self.assertEqual(place_name(), "The Lodge")
+
+    @override_settings(HUB_BRAND={"subtitle": "Mercer Island"})
     def test_no_location(self):
-        self.assertIsNone(location())
+        with self.at(Location(timezone="America/Los_Angeles")):
+            self.assertIsNone(location())
+            self.assertEqual(place_name(), "Mercer Island")
+        with self.at(None):
+            self.assertIsNone(location())
 
 
 @patch("weather.views.utc_now", return_value=NOW)
