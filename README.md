@@ -6,6 +6,13 @@ sunrise/sunset, a swipeable 24-hour strip and a 7-day forecast. Data is from
 [Open-Meteo](https://open-meteo.com/) (no API key), cached for 15 minutes; the page refreshes
 itself every 5 minutes.
 
+Active weather alerts (warnings, watches, advisories and special statements) show as a banner
+coloured by severity, from [Environment Canada](https://weather.gc.ca/) in Canada and the
+[National Weather Service](https://www.weather.gov/) in the US (both keyless, cached for 5 minutes).
+While a wind, snowfall or rainfall alert is on, the 24-hour strip shows that number instead of the
+chance of rain (wind speed, direction and gusts; snow or rain per hour with a running total), and
+the home tile turns amber with the alert's name.
+
 ## Settings
 
 Set them on the hub's Settings page, in the site's `[apps.weather]` table, or as

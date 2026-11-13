@@ -4,6 +4,7 @@ from django.shortcuts import render
 
 from bdh_sdk.units import system
 
+from .alerts import get_alerts
 from .forecast import EFFECTS, describe, get_weather, place_name, weather_effect
 
 COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
@@ -36,6 +37,20 @@ class Units:
             return None
         return round(kph * 0.621371) if self.imperial else round(kph)
 
+    @property
+    def snow_unit(self):
+        return "in" if self.imperial else "cm"
+
+    @property
+    def rain_unit(self):
+        return "in" if self.imperial else "mm"
+
+    def snow(self, cm):
+        return round(cm / 2.54, 1) if self.imperial else round(cm, 1)
+
+    def rain(self, mm):
+        return round(mm / 25.4, 2) if self.imperial else round(mm, 1)
+
 
 def _clock(t):
     return f"{t.hour % 12 or 12}:{t:%M} {'AM' if t.hour < 12 else 'PM'}"
@@ -63,7 +78,78 @@ def _next(times, now):
     return None
 
 
-def build_context(data, units, now=None):
+def _num(value):
+    """2.0 → "2", 2.5 → "2.5"."""
+    return f"{value:g}"
+
+
+def _compass(direction):
+    return COMPASS[round(direction / 45) % 8] if direction is not None else None
+
+
+def _alert_view(alert, offset, local_now):
+    """An alert with its times as local clock strings for the banner."""
+    def local(t):
+        return (t.astimezone(timezone.utc) + offset).replace(tzinfo=None) if t else None
+
+    view = dict(alert)
+    issued, start, end = local(alert["issued"]), local(alert["start"]), local(alert["end"])
+    view["issued_at"] = _clock(issued) if issued else None
+    when = []
+    if start and start > local_now:
+        when.append(f"from {start:%a} {_clock(start)}" if start.date() != local_now.date() else f"from {_clock(start)}")
+    if end:
+        when.append(f"until {end:%a} {_clock(end)}" if end.date() != local_now.date() else f"until {_clock(end)}")
+    view["when"] = " ".join(when)
+    return view
+
+
+def _alert_strip(alert, hours, hourly, offset, now, u):
+    """Swap the 24-hour strip's rain chance for the number the alert is about (wind, snow or rain).
+
+    Marks the hours inside the alert's window and returns the header chip, or None to keep the
+    normal strip (e.g. a forecast cached before the extra hourly fields existed).
+    """
+    kind = alert["kind"]
+    fields = {"wind": ("wind_speed_10m", "wind_gusts_10m", "wind_direction_10m"),
+              "snow": ("snowfall",), "rain": ("precipitation",)}[kind]
+    if not hours or not all(hourly.get(f) for f in fields):
+        return None
+    start = alert["start"] or now
+    for h in hours:
+        i = h["i"]
+        local_start = datetime.fromisoformat(hourly["time"][i])
+        begins = (local_start - offset).replace(tzinfo=timezone.utc)
+        h["until"] = _hour(local_start + timedelta(hours=1))
+        h["inwin"] = begins + timedelta(hours=1) > start and (alert["end"] is None or begins < alert["end"])
+        if kind == "wind":
+            direction = hourly["wind_direction_10m"][i]
+            h.update(value=u.s(hourly["wind_speed_10m"][i]), gust=u.s(hourly["wind_gusts_10m"][i]),
+                     wind_from=_compass(direction),
+                     rotation=(direction + 180) % 360 if direction is not None else None)
+        else:
+            h["raw"] = (hourly["snowfall"] if kind == "snow" else hourly["precipitation"])[i] or 0
+            h["value"] = u.snow(h["raw"]) if kind == "snow" else u.rain(h["raw"])
+    window = [h for h in hours if h["inwin"]]
+    if not window:  # the alert starts after the strip ends
+        return None
+    if kind == "wind":
+        peaks = [h["value"] for h in window if h["value"] is not None]
+        gusts = [h["gust"] for h in window if h["gust"] is not None]
+        if not peaks:
+            return None
+        return f"Peak {max(peaks)} {u.speed}" + (f" · gusts {max(gusts)}" if gusts else "")
+    top = max(h["value"] for h in hours) or 1
+    for h in hours:
+        h["bar"] = round(h["value"] / top * 100)
+        h["value"] = _num(h["value"])
+    raw = sum(h["raw"] for h in window)
+    total = u.snow(raw) if kind == "snow" else u.rain(raw)
+    unit = u.snow_unit if kind == "snow" else u.rain_unit
+    return f"Total {_num(total)} {unit} by {window[-1]['until']}"
+
+
+def build_context(data, units, now=None, alerts=()):
     u = Units(units)
     context = {"units": u.system, "u": u, "place": place_name(), "ok": False}
     forecast = (data or {}).get("forecast")
@@ -108,12 +194,23 @@ def build_context(data, units, now=None):
             continue
         h_icon, _ = describe(hourly["weather_code"][i], bool(hourly["is_day"][i]))
         hours.append({
+            "i": i,
             "name": "Now" if not hours else _hour(datetime.fromisoformat(iso)),
             "icon": h_icon, "temp": u.t(hourly["temperature_2m"][i]),
             "pop": hourly["precipitation_probability"][i] or 0,
         })
         if len(hours) == 24:
             break
+
+    offset = timedelta(seconds=forecast.get("utc_offset_seconds", 0))
+    alerts = [_alert_view(a, offset, local) for a in alerts]
+    strip = None
+    lead = next((a for a in alerts if a["kind"]), None)
+    if lead:
+        chip = _alert_strip(lead, hours, hourly, offset, now, u)
+        if chip:
+            strip = {"kind": lead["kind"], "severity": lead["severity"], "chip": chip,
+                     "unit": {"wind": u.speed, "snow": u.snow_unit, "rain": u.rain_unit}[lead["kind"]]}
 
     direction = c.get("wind_direction_10m")
     today = days[0] if days and days[0]["name"] == "Today" else None
@@ -137,13 +234,17 @@ def build_context(data, units, now=None):
         "sunset": _next(daily.get("sunset", []), local),
         "hours": hours,
         "days": days,
+        "alerts": alerts,
+        "alert_sources": sorted({a["source"] for a in alerts}),
+        "strip": strip,
     })
     return context
 
 
 def weather(request):
     units = request.GET.get("units") or default_units()
-    context = build_context(get_weather(), units)
+    now = utc_now()
+    context = build_context(get_weather(), units, now, alerts=get_alerts(now))
     if request.GET.get("wx") in EFFECTS:  # preview a background
         context["wx"] = request.GET["wx"]
     return render(request, "weather/weather.html", context)
