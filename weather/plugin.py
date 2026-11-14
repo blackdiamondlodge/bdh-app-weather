@@ -28,6 +28,6 @@ spec = PluginSpec(
     ),
     settings=(
         Setting("place", "Place name", default="",
-                help="Shown on the Now card. Defaults to the city in Settings > Location."),
+                help="Shown on the Now card. Defaults to the city in Settings > General."),
     ),
 )

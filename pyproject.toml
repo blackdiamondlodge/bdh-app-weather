@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bdh-app-weather"
-version = "1.6.0"
+version = "1.6.1"
 description = "Black Diamond Hub app: weather for any location (now, 24 hours, 7 days, air quality, alerts)"
 readme = "README.md"
 license = { text = "MIT" }
