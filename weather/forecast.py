@@ -84,7 +84,7 @@ def describe(code, is_day=True):
 
 
 def location():
-    """(latitude, longitude) of the hub's location (Settings > Location), or None."""
+    """(latitude, longitude) of the hub's location (Settings > General), or None."""
     where = hub_location()
     if not where or not where.has_coordinates:
         return None
